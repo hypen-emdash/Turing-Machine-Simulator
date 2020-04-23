@@ -1,4 +1,4 @@
-use crate::program::{Goto, Movement, Program};
+use crate::program::{Goto, Movement, Response};
 use std::{
     collections::VecDeque,
     default::Default,
@@ -9,44 +9,63 @@ use std::{
 };
 
 #[derive(Debug)]
-pub struct TuringMachine<State, Alphabet>
+pub struct TuringMachine<State, Alphabet, Program>
 where
     State: Eq + Hash + Clone + Debug,
     Alphabet: Eq + Hash + Default + Clone + Debug,
+    Program: Fn(&State, &Alphabet) -> Response<State, Alphabet>,
 {
     state: Goto<State>,
-    prog: Program<State, Alphabet>,
+    prog: Program,
     tape: VecDeque<Alphabet>,
     idx: usize, // location on the tape.
-    counter: u64,
 }
 
-impl<State, Alphabet> TuringMachine<State, Alphabet>
+impl<State, Alphabet, Program> TuringMachine<State, Alphabet, Program>
 where
     State: Eq + Hash + Clone + Debug,
     Alphabet: Eq + Hash + Default + Clone + Debug,
+    Program: Fn(&State, &Alphabet) -> Response<State, Alphabet>,
 {
-    pub fn new(prog: Program<State, Alphabet>, input: impl Iterator<Item = Alphabet>) -> Self {
+    pub fn new(start: State, prog: Program, input: impl Iterator<Item = Alphabet>) -> Self {
         let mut tape = VecDeque::from_iter(input);
         if tape.is_empty() {
             tape.push_back(Default::default());
         }
         Self {
-            state: Goto::Run(prog.get_start().clone()),
+            state: Goto::Run(start),
             prog,
             tape,
             idx: 0,
-            counter: 0,
         }
     }
 
-    // May not return - halting problem is hard, yo.
-    pub fn run(&mut self) -> Option<bool> {
-        let mut ret = None;
-        for temp in self {
-            ret = temp;
+    /// May not return - halting problem is hard, yo.
+    pub fn run(&mut self) -> bool {
+        loop {
+            if let Some(accept) = self.step() {
+                return accept;
+            }
         }
-        ret
+    }
+
+    /// If TM is in a halt state, returns Some(acceptance)
+    /// If TM is in execution, computes one step and returns None
+    pub fn step(&mut self) -> Option<bool> {
+        match self.state {
+            Goto::Halt(accept) => Some(accept),
+            Goto::Run(ref state) => {
+                let response = (self.prog)(state, &self.read_symbol());
+                self.apply_response(response);
+                None
+            }
+        }
+    }
+
+    fn apply_response(&mut self, response: Response<State, Alphabet>) {
+        self.state = response.goto;
+        self.write_symbol(response.write);
+        response.mv.map(|mv| self.move_head(mv));
     }
 
     fn read_symbol(&self) -> Alphabet {
@@ -102,38 +121,11 @@ where
     }
 }
 
-impl<State, Alphabet> Iterator for TuringMachine<State, Alphabet>
-where
-    State: Eq + Hash + Clone + Debug,
-    Alphabet: Eq + Hash + Default + Clone + Debug,
-{
-    type Item = Option<bool>;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        match &self.state {
-            Goto::Halt(_) => None,
-            Goto::Run(ref state) => {
-                self.counter += 1;
-
-                let to_do = self.prog.get_response(state.clone(), self.read_symbol())?;
-                self.state = to_do.0;
-                self.write_symbol(to_do.1);
-                if let Some(direction) = to_do.2 {
-                    self.move_head(direction);
-                }
-                match &self.state {
-                    Goto::Run(_) => Some(None),
-                    Goto::Halt(ref b) => Some(Some(*b)),
-                }
-            }
-        }
-    }
-}
-
-impl<State, Alphabet> fmt::Display for TuringMachine<State, Alphabet>
+impl<State, Alphabet, Program> fmt::Display for TuringMachine<State, Alphabet, Program>
 where
     State: Eq + Hash + Clone + Debug + Display,
     Alphabet: Eq + Hash + Default + Clone + Debug + Display,
+    Program: Fn(&State, &Alphabet) -> Response<State, Alphabet>,
 {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         writeln!(f, "================")?;
@@ -144,8 +136,7 @@ where
             }
             writeln!(f)?;
         }
-        writeln!(f, "================")?;
-        write!(f, "{}", self.counter)
+        writeln!(f, "================")
     }
 }
 
@@ -153,18 +144,20 @@ where
 mod tests {
     use super::*;
 
-    use crate::program::{Program, Transition};
+    use crate::program::{ProgramBuilder};
 
     #[test]
     fn construct() {
-        let prog = Program::<bool, u8>::new(false);
-        let m = TuringMachine::new(prog, std::iter::empty());
+        let prog = ProgramBuilder::<bool, u8>::new().build();
+        let m = TuringMachine::new(false, prog, std::iter::empty());
         assert_eq!(m.read_symbol(), 0);
     }
 
-    #[test]
-    fn even_zeros() {
-        #[derive(Debug, Clone, Hash, PartialEq, Eq)]
+    // Based around a program that accepts strings with an even number of zeros.
+    mod even_zeros {
+        use super::*;
+
+        #[derive(Debug, Clone, Copy, Hash, PartialEq, Eq)]
         enum State {
             Scan,
             Flip,
@@ -172,11 +165,11 @@ mod tests {
             Odd,
         }
 
-        #[derive(Debug, Clone, Hash, PartialEq, Eq)]
+        #[derive(Debug, Clone, Copy, Hash, PartialEq, Eq)]
         enum Alphabet {
+            Blank,
             Zero,
             One,
-            Blank,
         }
 
         impl Default for Alphabet {
@@ -185,62 +178,66 @@ mod tests {
             }
         }
 
-        use Alphabet::*;
-        use State::*;
+        fn get_prog() -> impl Fn(&State, &Alphabet) -> Response<State, Alphabet> {
+            use Alphabet::*;
+            use State::*;
+            use Movement::*;
+            ProgramBuilder::new()
+                // Scan to the end of the string uselessly.
+                .with_transition((Scan, Blank), (Goto::Run(Flip), Blank, Some(Left)))
+                .with_transition((Scan, Zero), (Goto::Run(Scan), Zero, Some(Right)))
+                .with_transition((Scan, One), (Goto::Run(Scan), One, Some(Right)))
+                // Go back to the beginning, flipping each bit.
+                .with_transition((Flip, Blank), (Goto::Run(Even), Blank, Some(Right)))
+                .with_transition((Flip, Zero), (Goto::Run(Flip), One, Some(Left)))
+                .with_transition((Flip, One), (Goto::Run(Flip), Zero, Some(Left)))
+                // Count parity of ones.
+                .with_transition((Even, Blank), (Goto::Halt(true), Blank, None))
+                .with_transition((Even, Zero), (Goto::Run(Even), Zero, Some(Right)))
+                .with_transition((Even, One), (Goto::Run(Odd), One, Some(Right)))
+                .with_transition((Odd, Blank), (Goto::Halt(false), Blank, None))
+                .with_transition((Odd, Zero), (Goto::Run(Odd), Zero, Some(Right)))
+                .with_transition((Odd, One), (Goto::Run(Even), One, Some(Right)))
+                .build()
+        }
 
-        // Accepts strings with an even number of Zeros.
-        let p = Program::<State, Alphabet>::new(State::Scan).with_transitions(
-            [
-                // Scan to the right.
-                Transition::cont(Scan, Zero, Scan, Zero).right(),
-                Transition::cont(Scan, One, Scan, One).right(),
-                Transition::cont(Scan, Blank, Flip, Blank).left(),
-                // Scan to the left, flipping each cell.
-                Transition::cont(Flip, Zero, Flip, One).left(),
-                Transition::cont(Flip, One, Flip, Zero).left(),
-                Transition::cont(Flip, Blank, Even, Blank).right(),
-                // Count the parity.
-                Transition::cont(Even, Zero, Even, Zero).right(),
-                Transition::cont(Even, One, Odd, One).right(),
-                Transition::cont(Odd, Zero, Odd, Zero).right(),
-                Transition::cont(Odd, One, Even, One).right(),
-                // Check the parity.
-                Transition::accept(Even, Blank, Blank),
-                Transition::reject(Odd, Blank, Blank),
-            ]
-            .iter()
-            .cloned(),
-        );
+        #[test]
+        fn accept_empty() {
+            let prog = get_prog();
+            let mut m = TuringMachine::new(State::Scan, prog, std::iter::empty());
+            assert!(m.run());
+        }
 
-        let input = [Zero, One, One, Zero, One, Zero, One, Zero, One];
-        let mut m = TuringMachine::new(p, input.iter().cloned());
-        assert_eq!(m.run(), Some(true));
+        #[test]
+        fn accept_nontrivial() {
+            use Alphabet::*;
+            let prog = get_prog();
+            let tape = [Zero, Zero, One, Zero, One, One, Zero];
+            let mut m = TuringMachine::new(State::Scan, prog, tape.iter().cloned());
+            assert!(m.run())
+        }
+
+        #[test]
+        fn reject_nontrivial() {
+            use Alphabet::*;
+            let prog = get_prog();
+            let tape = [Zero, Zero, One, One, One, One, Zero];
+            let mut m = TuringMachine::new(State::Scan, prog, tape.iter().cloned());
+            assert!(!m.run())
+        }
     }
 
+    // Based around a program that checks if a string has an equal number of ones, twos, and threes.
     mod ones_twos_threes {
         use super::*;
-
-        #[derive(Debug, Clone, PartialEq, Eq, Hash)]
-        enum State {
-            Begin,
-            SkipOnes,
-            SkipTwos,
-            SkipThrees,
-            CheckThrees,
-            CheckTwos,
-            CheckOnes,
-            CheckSuccess,
-        }
+        type State = [usize; 3];
         #[derive(Debug, Clone, PartialEq, Eq, Hash)]
         enum Alphabet {
             Blank,
             One,
             Two,
             Three,
-            Seen,
         }
-        use Alphabet::*;
-        use State::*;
 
         impl Default for Alphabet {
             fn default() -> Self {
@@ -248,341 +245,184 @@ mod tests {
             }
         }
 
-        fn get_prog() -> Program<State, Alphabet> {
-            // T(n) = 5n^2 + 3n
-            // (I think)
-            Program::new(Begin).with_transitions(
-                [
-                    // EraseOne
-                    Transition::cont(Begin, One, SkipOnes, Seen).right(),
-                    Transition::accept(Begin, Blank, Blank),
-                    Transition::reject(Begin, Two, Two),
-                    Transition::reject(Begin, Three, Three),
-                    // SkipOnes
-                    Transition::cont(SkipOnes, One, SkipOnes, One).right(),
-                    Transition::cont(SkipOnes, Seen, SkipOnes, Seen).right(),
-                    Transition::cont(SkipOnes, Two, SkipTwos, Seen).right(),
-                    Transition::reject(SkipOnes, Three, Three),
-                    Transition::reject(SkipOnes, Blank, Blank),
-                    // SkipTwos
-                    Transition::cont(SkipTwos, Two, SkipTwos, Two).right(),
-                    Transition::cont(SkipTwos, Seen, SkipTwos, Seen).right(),
-                    Transition::cont(SkipTwos, Three, SkipThrees, Seen).right(),
-                    Transition::reject(SkipTwos, One, One),
-                    Transition::reject(SkipTwos, Blank, Blank),
-                    // SkipThrees
-                    Transition::cont(SkipThrees, Three, SkipThrees, Three).right(),
-                    Transition::cont(SkipThrees, Seen, SkipThrees, Seen).right(),
-                    Transition::cont(SkipThrees, Blank, CheckSuccess, Blank).left(),
-                    Transition::reject(SkipThrees, One, One),
-                    Transition::reject(SkipThrees, Two, Two),
-                    // CheckSuccess
-                    Transition::cont(CheckSuccess, Seen, CheckSuccess, Seen).left(),
-                    Transition::cont(CheckSuccess, Three, CheckThrees, Three).left(),
-                    Transition::accept(CheckSuccess, Blank, Blank),
-                    Transition::reject(CheckSuccess, One, One),
-                    Transition::reject(CheckSuccess, Two, Two),
-                    // CheckThrees
-                    Transition::cont(CheckThrees, Three, CheckThrees, Three).left(),
-                    Transition::cont(CheckThrees, Seen, CheckThrees, Seen).left(),
-                    Transition::cont(CheckThrees, Two, CheckTwos, Two).left(),
-                    Transition::reject(CheckThrees, One, One),
-                    Transition::reject(CheckThrees, Blank, Blank),
-                    // CheckTwos
-                    Transition::cont(CheckTwos, Two, CheckTwos, Two).left(),
-                    Transition::cont(CheckTwos, Seen, CheckTwos, Seen).left(),
-                    Transition::cont(CheckTwos, One, CheckOnes, One).left(),
-                    Transition::reject(CheckTwos, Three, Three),
-                    Transition::reject(CheckTwos, Blank, Blank),
-                    // CheckOnes
-                    Transition::cont(CheckOnes, One, CheckOnes, One).left(),
-                    Transition::cont(CheckOnes, Seen, Begin, Seen).right(),
-                    Transition::reject(CheckOnes, Three, Three),
-                    Transition::reject(CheckOnes, Two, Two),
-                ]
-                .iter()
-                .cloned(),
-            )
+        // This program technically violates the finite nature of turing machines, but if you're being even more
+        // technical, it doesn't.
+        fn get_prog() -> impl Fn(&State, &Alphabet) -> Response<State, Alphabet> {
+            use Alphabet::*;
+            |count, read| {
+                let mut new_count = count.clone();
+                match read {
+                    Blank => {
+                        return Response {
+                            goto: Goto::Halt(count[0] == count[1] && count[1] == count[2]),
+                            write: read.clone(),
+                            mv: None,
+                        }
+                    },
+                    One => new_count[0] += 1,
+                    Two => new_count[1] += 1,
+                    Three => new_count[2] += 1,
+                }
+                Response {
+                    goto: Goto::Run(new_count),
+                    write: read.clone(),
+                    mv: Some(Movement::Right),
+                }
+            }
         }
 
         #[test]
         fn accept_empty() {
-            let input = [];
-            let mut m = TuringMachine::new(get_prog(), input.iter().cloned());
-            assert_eq!(m.run(), Some(true));
+            let prog = get_prog();
+            let mut m = TuringMachine::new([0; 3], prog, std::iter::empty());
+            assert!(m.run());
         }
 
         #[test]
         fn accept_small() {
-            let input = [One, Two, Three];
-            let mut m = TuringMachine::new(get_prog(), input.iter().cloned());
-            assert_eq!(m.run(), Some(true));
+            use Alphabet::*;
+
+            let prog = get_prog();
+            let input = [One, Three, Two];
+            let mut m = TuringMachine::new([0; 3], prog, input.iter().cloned());
+            assert!(m.run());
         }
 
         #[test]
         fn accept_large() {
-            let input = {
-                let mut input = Vec::new();
-                let n = 500;
-                for _ in 0..n {
-                    input.push(One);
-                }
-                for _ in 0..n {
-                    input.push(Two);
-                }
-                for _ in 0..n {
-                    input.push(Three);
-                }
-                input
-            };
-            let mut m = TuringMachine::new(get_prog(), input.iter().cloned());
-            assert_eq!(m.run(), Some(true));
+            use std::iter::repeat;
+            use Alphabet::*;
+
+            let prog = get_prog();
+            let ones = repeat(One).take(300);
+            let twos = repeat(Two).take(300);
+            let threes = repeat(Three).take(300);
+            let input = ones.chain(twos).chain(threes);
+            let mut m = TuringMachine::new([0; 3], prog, input);
+            assert!(m.run());
         }
 
         #[test]
         fn reject_no_ones() {
-            let input = [Two, Three];
-            let mut m = TuringMachine::new(get_prog(), input.iter().cloned());
-            assert_eq!(m.run(), Some(false));
+            use std::iter::repeat;
+            use Alphabet::*;
+
+            let prog = get_prog();
+            let twos = repeat(Two).take(300);
+            let threes = repeat(Three).take(300);
+            let input = twos.chain(threes);
+            let mut m = TuringMachine::new([0; 3], prog, input);
+            assert!(!m.run());
         }
 
         #[test]
         fn reject_no_twos() {
-            let input = [One, Three];
-            let mut m = TuringMachine::new(get_prog(), input.iter().cloned());
-            assert_eq!(m.run(), Some(false));
+            use std::iter::repeat;
+            use Alphabet::*;
+
+            let prog = get_prog();
+            let ones = repeat(One).take(300);
+            let threes = repeat(Three).take(300);
+            let input = ones.chain(threes);
+            let mut m = TuringMachine::new([0; 3], prog, input);
+            assert!(!m.run());
         }
 
         #[test]
         fn reject_no_threes() {
-            let input = [One, Two];
-            let mut m = TuringMachine::new(get_prog(), input.iter().cloned());
-            assert_eq!(m.run(), Some(false));
-        }
+            use std::iter::repeat;
+            use Alphabet::*;
 
-        #[test]
-        fn reject_out_of_order() {
-            let input = [Two, One, Three];
-            let mut m = TuringMachine::new(get_prog(), input.iter().cloned());
-            assert_eq!(m.run(), Some(false));
+            let prog = get_prog();
+            let twos = repeat(Two).take(300);
+            let ones = repeat(One).take(300);
+            let input = ones.chain(twos);
+            let mut m = TuringMachine::new([0; 3], prog, input);
+            assert!(!m.run());
         }
 
         #[test]
         fn reject_too_many_ones() {
-            let input = {
-                let mut input = Vec::new();
-                let n = 12;
-                for _ in 0..n + 1 {
-                    input.push(One);
-                }
-                for _ in 0..n {
-                    input.push(Two);
-                }
-                for _ in 0..n {
-                    input.push(Three);
-                }
-                input
-            };
-            let mut m = TuringMachine::new(get_prog(), input.iter().cloned());
-            assert_eq!(m.run(), Some(false));
+            use std::iter::repeat;
+            use Alphabet::*;
+
+            let prog = get_prog();
+            let ones = repeat(One).take(301);
+            let twos = repeat(Two).take(300);
+            let threes = repeat(Three).take(300);
+            let input = ones.chain(twos).chain(threes);
+            let mut m = TuringMachine::new([0; 3], prog, input);
+            assert!(!m.run());
         }
 
         #[test]
         fn reject_too_many_twos() {
-            let input = {
-                let mut input = Vec::new();
-                let n = 12;
-                for _ in 0..n {
-                    input.push(One);
-                }
-                for _ in 0..n + 1 {
-                    input.push(Two);
-                }
-                for _ in 0..n {
-                    input.push(Three);
-                }
-                input
-            };
-            let mut m = TuringMachine::new(get_prog(), input.iter().cloned());
-            assert_eq!(m.run(), Some(false));
+            use std::iter::repeat;
+            use Alphabet::*;
+
+            let prog = get_prog();
+            let ones = repeat(One).take(300);
+            let twos = repeat(Two).take(301);
+            let threes = repeat(Three).take(300);
+            let input = ones.chain(twos).chain(threes);
+            let mut m = TuringMachine::new([0; 3], prog, input);
+            assert!(!m.run());
         }
 
         #[test]
         fn reject_too_many_threes() {
-            let input = {
-                let mut input = Vec::new();
-                let n = 12;
-                for _ in 0..n {
-                    input.push(One);
-                }
-                for _ in 0..n {
-                    input.push(Two);
-                }
-                for _ in 0..n + 1 {
-                    input.push(Three);
-                }
-                input
-            };
-            let mut m = TuringMachine::new(get_prog(), input.iter().cloned());
-            assert_eq!(m.run(), Some(false));
+            use std::iter::repeat;
+            use Alphabet::*;
+
+            let prog = get_prog();
+            let ones = repeat(One).take(300);
+            let twos = repeat(Two).take(300);
+            let threes = repeat(Three).take(301);
+            let input = ones.chain(twos).chain(threes);
+            let mut m = TuringMachine::new([0; 3], prog, input);
+            assert!(!m.run());
         }
 
         #[test]
         fn reject_no_enough_ones() {
-            let input = {
-                let mut input = Vec::new();
-                let n = 12;
-                for _ in 0..n - 1 {
-                    input.push(One);
-                }
-                for _ in 0..n {
-                    input.push(Two);
-                }
-                for _ in 0..n {
-                    input.push(Three);
-                }
-                input
-            };
-            let mut m = TuringMachine::new(get_prog(), input.iter().cloned());
-            assert_eq!(m.run(), Some(false));
+            use std::iter::repeat;
+            use Alphabet::*;
+
+            let prog = get_prog();
+            let ones = repeat(One).take(299);
+            let twos = repeat(Two).take(300);
+            let threes = repeat(Three).take(300);
+            let input = ones.chain(twos).chain(threes);
+            let mut m = TuringMachine::new([0; 3], prog, input);
+            assert!(!m.run());
         }
 
         #[test]
         fn reject_no_enough_twos() {
-            let input = {
-                let mut input = Vec::new();
-                let n = 12;
-                for _ in 0..n {
-                    input.push(One);
-                }
-                for _ in 0..n - 1 {
-                    input.push(Two);
-                }
-                for _ in 0..n {
-                    input.push(Three);
-                }
-                input
-            };
-            let mut m = TuringMachine::new(get_prog(), input.iter().cloned());
-            assert_eq!(m.run(), Some(false));
+            use std::iter::repeat;
+            use Alphabet::*;
+
+            let prog = get_prog();
+            let ones = repeat(One).take(300);
+            let twos = repeat(Two).take(299);
+            let threes = repeat(Three).take(300);
+            let input = ones.chain(twos).chain(threes);
+            let mut m = TuringMachine::new([0; 3], prog, input);
+            assert!(!m.run());
         }
 
         #[test]
         fn reject_no_enough_threes() {
-            let input = {
-                let mut input = Vec::new();
-                let n = 12;
-                for _ in 0..n {
-                    input.push(One);
-                }
-                for _ in 0..n {
-                    input.push(Two);
-                }
-                for _ in 0..n - 1 {
-                    input.push(Three);
-                }
-                input
-            };
-            let mut m = TuringMachine::new(get_prog(), input.iter().cloned());
-            assert_eq!(m.run(), Some(false));
-        }
-    }
+            use std::iter::repeat;
+            use Alphabet::*;
 
-    mod repeated_string {
-        use super::*;
-        use smol_str::SmolStr;
-        use std::str::FromStr;
-
-        fn get_prog() -> Program<SmolStr, SmolStr> {
-            Program::<SmolStr, SmolStr>::new("read".into()).with_transitions(
-                [
-                    // read - degenerate case
-                    Transition::from_str("([read], \"\") -> (v, \"\", 0)").unwrap(),
-                    // read - final case
-                    Transition::from_str("([read], \"#\") -> ([end], \"#\", +)").unwrap(),
-                    // read - good cases
-                    Transition::from_str("([read], \"0\")->([search 0 left], \"x\", +)").unwrap(),
-                    Transition::from_str("([read], \"1\")->([search 1 left], \"x\", +)").unwrap(),
-                    // search-0-left
-                    Transition::from_str("([search 0 left], \"0\") -> ([search 0 left], \"0\", +)")
-                        .unwrap(),
-                    Transition::from_str("([search 0 left], \"1\") -> ([search 0 left], \"1\", +)")
-                        .unwrap(),
-                    Transition::from_str(
-                        "([search 0 left], \"#\") -> ([search 0 right], \"#\", +)",
-                    )
-                    .unwrap(),
-                    Transition::from_str("([search 0 left], \"\") -> (v, \"\", 0)").unwrap(),
-                    // search-1-left
-                    Transition::from_str("([search 1 left], \"0\") -> ([search 1 left], \"0\", +)")
-                        .unwrap(),
-                    Transition::from_str("([search 1 left], \"1\") -> ([search 1 left], \"1\", +)")
-                        .unwrap(),
-                    Transition::from_str(
-                        "([search 1 left], \"#\") -> ([search 1 right], \"#\", +)",
-                    )
-                    .unwrap(),
-                    Transition::from_str("([search 1 left], \"\") -> (v, \"\", 0)").unwrap(),
-                    // search-0-right
-                    Transition::from_str(
-                        "([search 0 right], \"0\") -> ([back up right], \"x\", -)",
-                    )
-                    .unwrap(),
-                    Transition::from_str(
-                        "([search 0 right], \"x\") -> ([search 0 right], \"x\", +)",
-                    )
-                    .unwrap(),
-                    Transition::from_str("([search 0 right], \"1\") -> (v, \"1\", 0)").unwrap(),
-                    Transition::from_str("([search 0 right], \"#\") -> (v, \"#\", 0)").unwrap(),
-                    Transition::from_str("([search 0 right], \"\") -> (v, \"\", 0)").unwrap(),
-                    // search-1-right
-                    Transition::from_str(
-                        "([search 1 right], \"1\") -> ([back up right], \"x\", -)",
-                    )
-                    .unwrap(),
-                    Transition::from_str(
-                        "([search 1 right], \"x\") -> ([search 1 right], \"x\", +)",
-                    )
-                    .unwrap(),
-                    Transition::from_str("([search 1 right], \"0\") -> (v, \"0\", 0)").unwrap(),
-                    Transition::from_str("([search 1 right], \"#\") -> (v, \"#\", 0)").unwrap(),
-                    Transition::from_str("([search 1 right], \"\") -> (v, \"\", 0)").unwrap(),
-                    // back-up-right
-                    Transition::from_str("([back up right], \"x\") -> ([back up right], \"x\", -)")
-                        .unwrap(),
-                    Transition::from_str("([back up right], \"#\") -> ([back up left], \"#\", -)")
-                        .unwrap(),
-                    // back-up-left
-                    Transition::from_str("([back up left], \"0\") -> ([back up left], \"0\", -)")
-                        .unwrap(),
-                    Transition::from_str("([back up left], \"1\") -> ([back up left], \"1\", -)")
-                        .unwrap(),
-                    Transition::from_str("([back up left], \"x\") -> ([read], \"x\", +)").unwrap(),
-                    // check at the end.
-                    Transition::from_str("([end], \"x\") -> ([end], \"x\", +)").unwrap(),
-                    Transition::from_str("([end], \"\") -> (^, \"\", 0)").unwrap(),
-                    Transition::from_str("([end], \"0\") -> (v, \"0\", 0)").unwrap(),
-                    Transition::from_str("([end], \"1\") -> (v, \"1\", 0)").unwrap(),
-                ]
-                .iter()
-                .cloned(),
-            )
-        }
-
-        #[test]
-        fn accept_normal() {
-            use rand::prelude::*;
-
-            let mut rng = thread_rng();
-            let word: Vec<SmolStr> = (0..7)
-                .map(|_| if rng.gen() { "1".into() } else { "0".into() })
-                .collect();
-            let mut input = word.clone();
-            input.push("#".into());
-            input.extend(word.into_iter());
-
-            let mut m = TuringMachine::new(get_prog(), input.into_iter());
-            assert_eq!(m.run(), Some(true));
+            let prog = get_prog();
+            let ones = repeat(One).take(300);
+            let twos = repeat(Two).take(300);
+            let threes = repeat(Three).take(299);
+            let input = ones.chain(twos).chain(threes);
+            let mut m = TuringMachine::new([0; 3], prog, input);
+            assert!(!m.run());
         }
     }
 }
