@@ -1,6 +1,6 @@
 use std::{collections::HashMap, fmt::Debug, hash::Hash};
 
-pub trait TransitionFn<State, Alphabet>: Fn(&State, &Alphabet) -> Response<State, Alphabet> + Sized {}
+pub trait TransitionFn<State, Alphabet>: Fn(&State, &Alphabet) -> Response<State, Alphabet> {}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Movement {
