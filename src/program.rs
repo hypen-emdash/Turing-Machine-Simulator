@@ -1,5 +1,7 @@
 use std::{collections::HashMap, fmt::Debug, hash::Hash};
 
+pub trait TransitionFn<State, Alphabet>: Fn(&State, &Alphabet) -> Response<State, Alphabet> + Sized {}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Movement {
     Left,
@@ -23,6 +25,11 @@ pub struct Response<State, Alphabet> {
     pub write: Alphabet,
     pub mv: Option<Movement>,
 }
+
+impl<T, State, Alphabet> TransitionFn<State, Alphabet> for T
+where
+    T: Fn(&State, &Alphabet) -> Response<State, Alphabet>
+{}
 
 impl<State, Alphabet> From<(State, Alphabet)> for Stimulus<State, Alphabet> {
     fn from((state, read): (State, Alphabet)) -> Self {
@@ -63,7 +70,7 @@ where
         }
     }
 
-    pub fn build(self) -> impl Fn(&State, &Alphabet) -> Response<State, Alphabet> {
+    pub fn build(self) -> impl TransitionFn<State, Alphabet> {
         let table = self.table;
         move |state: &State, symbol: &Alphabet| match table
             .get(state)

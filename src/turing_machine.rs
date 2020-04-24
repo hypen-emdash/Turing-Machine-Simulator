@@ -1,4 +1,4 @@
-use crate::program::{Goto, Movement, Response};
+use crate::program::{Goto, Movement, TransitionFn, Response};
 use std::{
     collections::VecDeque,
     default::Default,
@@ -13,7 +13,7 @@ pub struct TuringMachine<State, Alphabet, Program>
 where
     State: Eq + Hash + Clone + Debug,
     Alphabet: Eq + Hash + Default + Clone + Debug,
-    Program: Fn(&State, &Alphabet) -> Response<State, Alphabet>,
+    Program: TransitionFn<State, Alphabet>
 {
     state: Goto<State>,
     prog: Program,
@@ -25,7 +25,7 @@ impl<State, Alphabet, Program> TuringMachine<State, Alphabet, Program>
 where
     State: Eq + Hash + Clone + Debug,
     Alphabet: Eq + Hash + Default + Clone + Debug,
-    Program: Fn(&State, &Alphabet) -> Response<State, Alphabet>,
+    Program: TransitionFn<State, Alphabet>
 {
     pub fn new(start: State, prog: Program, input: impl Iterator<Item = Alphabet>) -> Self {
         let mut tape = VecDeque::from_iter(input);
@@ -125,7 +125,7 @@ impl<State, Alphabet, Program> fmt::Display for TuringMachine<State, Alphabet, P
 where
     State: Eq + Hash + Clone + Debug + Display,
     Alphabet: Eq + Hash + Default + Clone + Debug + Display,
-    Program: Fn(&State, &Alphabet) -> Response<State, Alphabet>,
+    Program: TransitionFn<State, Alphabet>
 {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         writeln!(f, "================")?;
