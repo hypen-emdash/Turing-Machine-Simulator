@@ -18,7 +18,7 @@ pub trait Tape<Alphabet> {
     fn get_mut(&mut self) -> &mut Alphabet;
 
     // rustc complains when we don't box the return type. Not sure why.
-    fn get_all(self) -> Box<dyn Iterator<Item=Alphabet>>;
+    fn get_all(self) -> Box<dyn Iterator<Item = Alphabet>>;
 }
 
 #[derive(Debug)]
@@ -64,7 +64,7 @@ where
             .expect("Unbounded tape must have R/W head over initialised cell.")
     }
 
-    fn get_all(self) -> Box<dyn Iterator<Item=Alphabet>> {
+    fn get_all(self) -> Box<dyn Iterator<Item = Alphabet>> {
         Box::new(self.tape.into_iter())
     }
 }

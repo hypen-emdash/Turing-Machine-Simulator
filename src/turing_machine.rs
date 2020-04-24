@@ -48,7 +48,7 @@ where
         }
     }
 
-    pub fn get_tape(self) -> impl Iterator<Item=Alphabet> {
+    pub fn get_tape(self) -> impl Iterator<Item = Alphabet> {
         self.tape.get_all()
     }
 
@@ -146,11 +146,7 @@ mod tests {
             use Alphabet::*;
             let prog = get_prog();
             let tape = vec![Zero, Zero, One, Zero, One, One, Zero];
-            let mut m = TuringMachine::new(
-                State::Scan,
-                prog,
-                Unbounded::from(tape),
-            );
+            let mut m = TuringMachine::new(State::Scan, prog, Unbounded::from(tape));
             assert!(m.run())
         }
 
@@ -159,11 +155,7 @@ mod tests {
             use Alphabet::*;
             let prog = get_prog();
             let tape = vec![Zero, Zero, One, One, One, One, Zero];
-            let mut m = TuringMachine::new(
-                State::Scan,
-                prog,
-                Unbounded::from(tape),
-            );
+            let mut m = TuringMachine::new(State::Scan, prog, Unbounded::from(tape));
             assert!(!m.run())
         }
     }

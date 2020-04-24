@@ -4,13 +4,14 @@ pub mod turing_machine;
 
 use smol_str::SmolStr;
 
-use program::{Response, TransitionFn, Movement, Goto};
-use turing_machine::TuringMachine;
+use program::{Goto, Movement, Response, TransitionFn};
 use tape::Unbounded;
+use turing_machine::TuringMachine;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let program = printer();
-    let mut machine = TuringMachine::new(SmolStr::from("Hello, world!\n"), program, Unbounded::new());
+    let mut machine =
+        TuringMachine::new(SmolStr::from("Hello, world!\n"), program, Unbounded::new());
 
     let accept = machine.run();
     let output = machine.get_tape();
@@ -20,7 +21,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     eprintln!("{}", accept);
     Ok(())
 }
-
 
 fn printer() -> impl TransitionFn<SmolStr, SmolStr> {
     |str_to_print: &SmolStr, current_symbol: &SmolStr| {
@@ -37,7 +37,7 @@ fn printer() -> impl TransitionFn<SmolStr, SmolStr> {
                 goto: Goto::Run(remainder),
                 write: SmolStr::from(format!("{}", c)),
                 mv: Some(Movement::Right),
-            }
+            },
         }
     }
 }
