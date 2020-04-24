@@ -1,7 +1,7 @@
 // Possible TODO: turn this into a multi-file module.
 
 use crate::program::Movement;
-use std::collections::VecDeque;
+use std::{iter::FromIterator, collections::VecDeque};
 
 pub trait Tape<Alphabet> {
     fn move_left(&mut self);
@@ -16,6 +16,9 @@ pub trait Tape<Alphabet> {
 
     fn get(&self) -> &Alphabet;
     fn get_mut(&mut self) -> &mut Alphabet;
+
+    // rustc complains when we don't box the return type. Not sure why.
+    fn get_all(self) -> Box<dyn Iterator<Item = Alphabet>>;
 }
 
 #[derive(Debug)]
@@ -35,7 +38,7 @@ where
 
 impl<Alphabet> Tape<Alphabet> for Unbounded<Alphabet>
 where
-    Alphabet: Default,
+    Alphabet: Default + 'static,
 {
     fn move_left(&mut self) {
         match self.idx.checked_sub(1) {
@@ -60,6 +63,10 @@ where
             .get_mut(self.idx)
             .expect("Unbounded tape must have R/W head over initialised cell.")
     }
+
+    fn get_all(self) -> Box<dyn Iterator<Item = Alphabet>> {
+        Box::new(self.tape.into_iter())
+    }
 }
 
 impl<T, Alphabet> From<T> for Unbounded<Alphabet>
@@ -76,6 +83,15 @@ where
             ret = Self::new();
         }
         ret
+    }
+}
+
+impl<Alphabet> FromIterator<Alphabet> for Unbounded<Alphabet>
+where
+    Alphabet: Default,
+{
+    fn from_iter<T: IntoIterator<Item = Alphabet>>(iter: T) -> Self {
+        Self::from(iter.into_iter().collect::<Vec<_>>())
     }
 }
 

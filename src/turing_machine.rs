@@ -2,7 +2,7 @@ use crate::{
     program::{Goto, Response, TransitionFn},
     tape::Tape,
 };
-use std::{default::Default, fmt, fmt::Debug, hash::Hash, marker::PhantomData};
+use std::{fmt, fmt::Debug, marker::PhantomData};
 
 #[derive(Debug)]
 pub struct TuringMachine<State, Alphabet, TapeImpl, Program> {
@@ -14,8 +14,6 @@ pub struct TuringMachine<State, Alphabet, TapeImpl, Program> {
 
 impl<State, Alphabet, TapeImpl, Program> TuringMachine<State, Alphabet, TapeImpl, Program>
 where
-    State: Eq + Hash + Clone + Debug,
-    Alphabet: Eq + Hash + Default + Clone + Debug,
     TapeImpl: Tape<Alphabet>,
     Program: TransitionFn<State, Alphabet>,
 {
@@ -50,6 +48,10 @@ where
         }
     }
 
+    pub fn get_tape(self) -> impl Iterator<Item = Alphabet> {
+        self.tape.get_all()
+    }
+
     fn apply_response(&mut self, response: Response<State, Alphabet>) {
         self.state = response.goto;
         *self.tape.get_mut() = response.write;
@@ -60,8 +62,6 @@ where
 impl<State, Alphabet, TapeImpl, Program> fmt::Display
     for TuringMachine<State, Alphabet, TapeImpl, Program>
 where
-    State: Eq + Hash + Clone + Debug,
-    Alphabet: Eq + Hash + Default + Clone + Debug,
     TapeImpl: Tape<Alphabet>,
     Program: TransitionFn<State, Alphabet>,
 {
@@ -146,11 +146,7 @@ mod tests {
             use Alphabet::*;
             let prog = get_prog();
             let tape = vec![Zero, Zero, One, Zero, One, One, Zero];
-            let mut m = TuringMachine::new(
-                State::Scan,
-                prog,
-                Unbounded::from(tape),
-            );
+            let mut m = TuringMachine::new(State::Scan, prog, Unbounded::from(tape));
             assert!(m.run())
         }
 
@@ -159,11 +155,7 @@ mod tests {
             use Alphabet::*;
             let prog = get_prog();
             let tape = vec![Zero, Zero, One, One, One, One, Zero];
-            let mut m = TuringMachine::new(
-                State::Scan,
-                prog,
-                Unbounded::from(tape),
-            );
+            let mut m = TuringMachine::new(State::Scan, prog, Unbounded::from(tape));
             assert!(!m.run())
         }
     }
