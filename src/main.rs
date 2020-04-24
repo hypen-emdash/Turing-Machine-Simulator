@@ -2,7 +2,10 @@ pub mod program;
 pub mod tape;
 pub mod turing_machine;
 
+use std::{io, io::Read};
+
 use smol_str::SmolStr;
+use unicode_segmentation::UnicodeSegmentation;
 
 use program::{Goto, Movement, Response, TransitionFn};
 use tape::Unbounded;
@@ -10,15 +13,22 @@ use turing_machine::TuringMachine;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let program = printer();
+
+    let mut input_buf = Vec::new();
+    io::stdin().read_to_end(&mut input_buf)?;
+    let input = String::from_utf8(input_buf)?;
+    let graphemes = UnicodeSegmentation::graphemes(input.as_str(), true);
+    let tape: Unbounded<SmolStr> = graphemes.map(|g| SmolStr::from(g)).collect();
+
     let mut machine =
-        TuringMachine::new(SmolStr::from("Hello, world!\n"), program, Unbounded::new());
+        TuringMachine::new(SmolStr::from("Hello, world!\n"), program, tape);
 
     let accept = machine.run();
     let output = machine.get_tape();
     for item in output {
         print!("{}", item);
     }
-    eprintln!("{}", accept);
+    println!("{}", accept);
     Ok(())
 }
 

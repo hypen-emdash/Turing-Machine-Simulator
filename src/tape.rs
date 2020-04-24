@@ -1,7 +1,7 @@
 // Possible TODO: turn this into a multi-file module.
 
 use crate::program::Movement;
-use std::collections::VecDeque;
+use std::{iter::FromIterator, collections::VecDeque};
 
 pub trait Tape<Alphabet> {
     fn move_left(&mut self);
@@ -83,6 +83,15 @@ where
             ret = Self::new();
         }
         ret
+    }
+}
+
+impl<Alphabet> FromIterator<Alphabet> for Unbounded<Alphabet>
+where
+    Alphabet: Default,
+{
+    fn from_iter<T: IntoIterator<Item = Alphabet>>(iter: T) -> Self {
+        Self::from(iter.into_iter().collect::<Vec<_>>())
     }
 }
 
