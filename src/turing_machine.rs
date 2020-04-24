@@ -48,6 +48,10 @@ where
         }
     }
 
+    pub fn get_tape(self) -> impl Iterator<Item=Alphabet> {
+        self.tape.get_all()
+    }
+
     fn apply_response(&mut self, response: Response<State, Alphabet>) {
         self.state = response.goto;
         *self.tape.get_mut() = response.write;

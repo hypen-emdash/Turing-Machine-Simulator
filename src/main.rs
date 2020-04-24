@@ -13,7 +13,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut machine = TuringMachine::new(SmolStr::from("Hello, world!\n"), program, Unbounded::new());
 
     let accept = machine.run();
-    println!("{}", accept);
+    let output = machine.get_tape();
+    for item in output {
+        print!("{}", item);
+    }
+    eprintln!("{}", accept);
     Ok(())
 }
 
