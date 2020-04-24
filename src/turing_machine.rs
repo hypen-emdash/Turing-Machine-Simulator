@@ -145,11 +145,11 @@ mod tests {
         fn accept_nontrivial() {
             use Alphabet::*;
             let prog = get_prog();
-            let tape = [Zero, Zero, One, Zero, One, One, Zero];
+            let tape = vec![Zero, Zero, One, Zero, One, One, Zero];
             let mut m = TuringMachine::new(
                 State::Scan,
                 prog,
-                Unbounded::from(tape.iter().cloned().collect::<Vec<_>>()),
+                Unbounded::from(tape),
             );
             assert!(m.run())
         }
@@ -158,11 +158,11 @@ mod tests {
         fn reject_nontrivial() {
             use Alphabet::*;
             let prog = get_prog();
-            let tape = [Zero, Zero, One, One, One, One, Zero];
+            let tape = vec![Zero, Zero, One, One, One, One, Zero];
             let mut m = TuringMachine::new(
                 State::Scan,
                 prog,
-                Unbounded::from(tape.iter().cloned().collect::<Vec<_>>()),
+                Unbounded::from(tape),
             );
             assert!(!m.run())
         }
