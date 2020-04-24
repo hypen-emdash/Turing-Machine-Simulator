@@ -1,42 +1,30 @@
-use crate::program::{Goto, Movement, TransitionFn, Response};
-use std::{
-    collections::VecDeque,
-    default::Default,
-    fmt,
-    fmt::{Debug, Display},
-    hash::Hash,
-    iter::FromIterator,
+use crate::{
+    program::{Goto, Response, TransitionFn},
+    tape::Tape,
 };
+use std::{default::Default, fmt, fmt::Debug, hash::Hash, marker::PhantomData};
 
 #[derive(Debug)]
-pub struct TuringMachine<State, Alphabet, Program>
-where
-    State: Eq + Hash + Clone + Debug,
-    Alphabet: Eq + Hash + Default + Clone + Debug,
-    Program: TransitionFn<State, Alphabet>
-{
+pub struct TuringMachine<State, Alphabet, TapeImpl, Program> {
     state: Goto<State>,
     prog: Program,
-    tape: VecDeque<Alphabet>,
-    idx: usize, // location on the tape.
+    tape: TapeImpl,
+    phantom: PhantomData<Alphabet>,
 }
 
-impl<State, Alphabet, Program> TuringMachine<State, Alphabet, Program>
+impl<State, Alphabet, TapeImpl, Program> TuringMachine<State, Alphabet, TapeImpl, Program>
 where
     State: Eq + Hash + Clone + Debug,
     Alphabet: Eq + Hash + Default + Clone + Debug,
-    Program: TransitionFn<State, Alphabet>
+    TapeImpl: Tape<Alphabet>,
+    Program: TransitionFn<State, Alphabet>,
 {
-    pub fn new(start: State, prog: Program, input: impl Iterator<Item = Alphabet>) -> Self {
-        let mut tape = VecDeque::from_iter(input);
-        if tape.is_empty() {
-            tape.push_back(Default::default());
-        }
+    pub fn new(start: State, prog: Program, input: TapeImpl) -> Self {
         Self {
             state: Goto::Run(start),
             prog,
-            tape,
-            idx: 0,
+            tape: input,
+            phantom: PhantomData,
         }
     }
 
@@ -55,7 +43,7 @@ where
         match self.state {
             Goto::Halt(accept) => Some(accept),
             Goto::Run(ref state) => {
-                let response = (self.prog)(state, &self.read_symbol());
+                let response = (self.prog)(state, self.tape.get());
                 self.apply_response(response);
                 None
             }
@@ -64,79 +52,21 @@ where
 
     fn apply_response(&mut self, response: Response<State, Alphabet>) {
         self.state = response.goto;
-        self.write_symbol(response.write);
-        response.mv.map(|mv| self.move_head(mv));
-    }
-
-    fn read_symbol(&self) -> Alphabet {
-        self.tape[self.idx].clone()
-    }
-
-    fn write_symbol(&mut self, sym: Alphabet) {
-        self.tape[self.idx] = sym;
-    }
-
-    fn move_head(&mut self, direction: Movement) {
-        match direction {
-            Movement::Left => self.move_left(),
-            Movement::Right => self.move_right(),
-        }
-    }
-
-    fn move_left(&mut self) {
-        if self.idx == 0 {
-            self.tape.push_front(Default::default());
-        } else {
-            self.idx -= 1;
-        }
-    }
-
-    fn move_right(&mut self) {
-        self.idx += 1;
-        if self.tape.get(self.idx).is_none() {
-            self.tape.push_back(Default::default());
-        }
-    }
-
-    pub fn observe<'a>(&'a self, radius: usize) -> impl Iterator<Item = Alphabet> + 'a {
-        let start = self.idx as isize - radius as isize;
-        let end = self.idx as isize + radius as isize;
-
-        (start..=end).map(move |i| self.simulate_read(i))
-    }
-
-    pub fn get_tape<'a>(&'a self) -> impl Iterator<Item = Alphabet> + 'a {
-        self.tape.iter().cloned()
-    }
-
-    fn simulate_read(&self, idx: isize) -> Alphabet {
-        if idx < 0 {
-            Default::default()
-        } else {
-            match self.tape.get(idx as usize) {
-                None => Default::default(),
-                Some(a) => a.clone(),
-            }
-        }
+        *self.tape.get_mut() = response.write;
+        response.mv.map(|mv| self.tape.move_head(mv));
     }
 }
 
-impl<State, Alphabet, Program> fmt::Display for TuringMachine<State, Alphabet, Program>
+impl<State, Alphabet, TapeImpl, Program> fmt::Display
+    for TuringMachine<State, Alphabet, TapeImpl, Program>
 where
-    State: Eq + Hash + Clone + Debug + Display,
-    Alphabet: Eq + Hash + Default + Clone + Debug + Display,
-    Program: TransitionFn<State, Alphabet>
+    State: Eq + Hash + Clone + Debug,
+    Alphabet: Eq + Hash + Default + Clone + Debug,
+    TapeImpl: Tape<Alphabet>,
+    Program: TransitionFn<State, Alphabet>,
 {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        writeln!(f, "================")?;
-        for (i, symbol) in self.observe(9).enumerate() {
-            write!(f, "{}", symbol)?;
-            if i == 9 {
-                write!(f, "\t{:?}", self.state)?;
-            }
-            writeln!(f)?;
-        }
-        writeln!(f, "================")
+    fn fmt(&self, _f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        todo!()
     }
 }
 
@@ -144,13 +74,16 @@ where
 mod tests {
     use super::*;
 
-    use crate::program::{ProgramBuilder};
+    use crate::{
+        program::{Movement, Movement::*, ProgramBuilder},
+        tape::Unbounded,
+    };
 
     #[test]
     fn construct() {
         let prog = ProgramBuilder::<bool, u8>::new().build();
-        let m = TuringMachine::new(false, prog, std::iter::empty());
-        assert_eq!(m.read_symbol(), 0);
+        let m = TuringMachine::new(false, prog, Unbounded::new());
+        assert_eq!(m.tape.get(), &0);
     }
 
     // Based around a program that accepts strings with an even number of zeros.
@@ -178,10 +111,10 @@ mod tests {
             }
         }
 
+        use Alphabet::*;
+        use State::*;
+
         fn get_prog() -> impl Fn(&State, &Alphabet) -> Response<State, Alphabet> {
-            use Alphabet::*;
-            use State::*;
-            use Movement::*;
             ProgramBuilder::new()
                 // Scan to the end of the string uselessly.
                 .with_transition((Scan, Blank), (Goto::Run(Flip), Blank, Some(Left)))
@@ -204,7 +137,7 @@ mod tests {
         #[test]
         fn accept_empty() {
             let prog = get_prog();
-            let mut m = TuringMachine::new(State::Scan, prog, std::iter::empty());
+            let mut m = TuringMachine::new(State::Scan, prog, Unbounded::new());
             assert!(m.run());
         }
 
@@ -213,7 +146,11 @@ mod tests {
             use Alphabet::*;
             let prog = get_prog();
             let tape = [Zero, Zero, One, Zero, One, One, Zero];
-            let mut m = TuringMachine::new(State::Scan, prog, tape.iter().cloned());
+            let mut m = TuringMachine::new(
+                State::Scan,
+                prog,
+                Unbounded::from(tape.iter().cloned().collect::<Vec<_>>()),
+            );
             assert!(m.run())
         }
 
@@ -222,7 +159,11 @@ mod tests {
             use Alphabet::*;
             let prog = get_prog();
             let tape = [Zero, Zero, One, One, One, One, Zero];
-            let mut m = TuringMachine::new(State::Scan, prog, tape.iter().cloned());
+            let mut m = TuringMachine::new(
+                State::Scan,
+                prog,
+                Unbounded::from(tape.iter().cloned().collect::<Vec<_>>()),
+            );
             assert!(!m.run())
         }
     }
@@ -258,7 +199,7 @@ mod tests {
                             write: read.clone(),
                             mv: None,
                         }
-                    },
+                    }
                     One => new_count[0] += 1,
                     Two => new_count[1] += 1,
                     Three => new_count[2] += 1,
@@ -274,7 +215,7 @@ mod tests {
         #[test]
         fn accept_empty() {
             let prog = get_prog();
-            let mut m = TuringMachine::new([0; 3], prog, std::iter::empty());
+            let mut m = TuringMachine::new([0; 3], prog, Unbounded::new());
             assert!(m.run());
         }
 
@@ -283,8 +224,8 @@ mod tests {
             use Alphabet::*;
 
             let prog = get_prog();
-            let input = [One, Three, Two];
-            let mut m = TuringMachine::new([0; 3], prog, input.iter().cloned());
+            let input = vec![One, Three, Two];
+            let mut m = TuringMachine::new([0; 3], prog, Unbounded::from(input));
             assert!(m.run());
         }
 
@@ -297,8 +238,8 @@ mod tests {
             let ones = repeat(One).take(300);
             let twos = repeat(Two).take(300);
             let threes = repeat(Three).take(300);
-            let input = ones.chain(twos).chain(threes);
-            let mut m = TuringMachine::new([0; 3], prog, input);
+            let input = ones.chain(twos).chain(threes).collect::<Vec<_>>();
+            let mut m = TuringMachine::new([0; 3], prog, Unbounded::from(input));
             assert!(m.run());
         }
 
@@ -310,8 +251,8 @@ mod tests {
             let prog = get_prog();
             let twos = repeat(Two).take(300);
             let threes = repeat(Three).take(300);
-            let input = twos.chain(threes);
-            let mut m = TuringMachine::new([0; 3], prog, input);
+            let input = twos.chain(threes).collect::<Vec<_>>();
+            let mut m = TuringMachine::new([0; 3], prog, Unbounded::from(input));
             assert!(!m.run());
         }
 
@@ -323,8 +264,8 @@ mod tests {
             let prog = get_prog();
             let ones = repeat(One).take(300);
             let threes = repeat(Three).take(300);
-            let input = ones.chain(threes);
-            let mut m = TuringMachine::new([0; 3], prog, input);
+            let input = ones.chain(threes).collect::<Vec<_>>();
+            let mut m = TuringMachine::new([0; 3], prog, Unbounded::from(input));
             assert!(!m.run());
         }
 
@@ -336,8 +277,8 @@ mod tests {
             let prog = get_prog();
             let twos = repeat(Two).take(300);
             let ones = repeat(One).take(300);
-            let input = ones.chain(twos);
-            let mut m = TuringMachine::new([0; 3], prog, input);
+            let input = ones.chain(twos).collect::<Vec<_>>();
+            let mut m = TuringMachine::new([0; 3], prog, Unbounded::from(input));
             assert!(!m.run());
         }
 
@@ -350,8 +291,8 @@ mod tests {
             let ones = repeat(One).take(301);
             let twos = repeat(Two).take(300);
             let threes = repeat(Three).take(300);
-            let input = ones.chain(twos).chain(threes);
-            let mut m = TuringMachine::new([0; 3], prog, input);
+            let input = ones.chain(twos).chain(threes).collect::<Vec<_>>();
+            let mut m = TuringMachine::new([0; 3], prog, Unbounded::from(input));
             assert!(!m.run());
         }
 
@@ -364,8 +305,8 @@ mod tests {
             let ones = repeat(One).take(300);
             let twos = repeat(Two).take(301);
             let threes = repeat(Three).take(300);
-            let input = ones.chain(twos).chain(threes);
-            let mut m = TuringMachine::new([0; 3], prog, input);
+            let input = ones.chain(twos).chain(threes).collect::<Vec<_>>();
+            let mut m = TuringMachine::new([0; 3], prog, Unbounded::from(input));
             assert!(!m.run());
         }
 
@@ -378,8 +319,8 @@ mod tests {
             let ones = repeat(One).take(300);
             let twos = repeat(Two).take(300);
             let threes = repeat(Three).take(301);
-            let input = ones.chain(twos).chain(threes);
-            let mut m = TuringMachine::new([0; 3], prog, input);
+            let input = ones.chain(twos).chain(threes).collect::<Vec<_>>();
+            let mut m = TuringMachine::new([0; 3], prog, Unbounded::from(input));
             assert!(!m.run());
         }
 
@@ -392,8 +333,8 @@ mod tests {
             let ones = repeat(One).take(299);
             let twos = repeat(Two).take(300);
             let threes = repeat(Three).take(300);
-            let input = ones.chain(twos).chain(threes);
-            let mut m = TuringMachine::new([0; 3], prog, input);
+            let input = ones.chain(twos).chain(threes).collect::<Vec<_>>();
+            let mut m = TuringMachine::new([0; 3], prog, Unbounded::from(input));
             assert!(!m.run());
         }
 
@@ -406,8 +347,8 @@ mod tests {
             let ones = repeat(One).take(300);
             let twos = repeat(Two).take(299);
             let threes = repeat(Three).take(300);
-            let input = ones.chain(twos).chain(threes);
-            let mut m = TuringMachine::new([0; 3], prog, input);
+            let input = ones.chain(twos).chain(threes).collect::<Vec<_>>();
+            let mut m = TuringMachine::new([0; 3], prog, Unbounded::from(input));
             assert!(!m.run());
         }
 
@@ -420,8 +361,8 @@ mod tests {
             let ones = repeat(One).take(300);
             let twos = repeat(Two).take(300);
             let threes = repeat(Three).take(299);
-            let input = ones.chain(twos).chain(threes);
-            let mut m = TuringMachine::new([0; 3], prog, input);
+            let input = ones.chain(twos).chain(threes).collect::<Vec<_>>();
+            let mut m = TuringMachine::new([0; 3], prog, Unbounded::from(input));
             assert!(!m.run());
         }
     }
