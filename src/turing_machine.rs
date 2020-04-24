@@ -2,7 +2,7 @@ use crate::{
     program::{Goto, Response, TransitionFn},
     tape::Tape,
 };
-use std::{default::Default, fmt, fmt::Debug, hash::Hash, marker::PhantomData};
+use std::{fmt, fmt::Debug, marker::PhantomData};
 
 #[derive(Debug)]
 pub struct TuringMachine<State, Alphabet, TapeImpl, Program> {
@@ -14,8 +14,6 @@ pub struct TuringMachine<State, Alphabet, TapeImpl, Program> {
 
 impl<State, Alphabet, TapeImpl, Program> TuringMachine<State, Alphabet, TapeImpl, Program>
 where
-    State: Eq + Hash + Clone + Debug,
-    Alphabet: Eq + Hash + Default + Clone + Debug,
     TapeImpl: Tape<Alphabet>,
     Program: TransitionFn<State, Alphabet>,
 {
@@ -60,8 +58,6 @@ where
 impl<State, Alphabet, TapeImpl, Program> fmt::Display
     for TuringMachine<State, Alphabet, TapeImpl, Program>
 where
-    State: Eq + Hash + Clone + Debug,
-    Alphabet: Eq + Hash + Default + Clone + Debug,
     TapeImpl: Tape<Alphabet>,
     Program: TransitionFn<State, Alphabet>,
 {
