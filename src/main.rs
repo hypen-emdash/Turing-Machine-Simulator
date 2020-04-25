@@ -38,7 +38,11 @@ fn run(opt: Opt) -> Result<(), Box<dyn std::error::Error>> {
 
     let mut machine = TuringMachine::new(init, tr_func, tape);
 
-    let accept = machine.run();
+    let accept = if opt.debug {
+        machine.run_debug()?
+    } else {
+        machine.run()
+    };
     let output = machine.get_tape();
     for item in output {
         print!("{}", item);

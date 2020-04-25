@@ -1,9 +1,12 @@
 // Possible TODO: turn this into a multi-file module.
 
 use crate::program::Movement;
-use std::{collections::VecDeque, iter::FromIterator};
+use std::{borrow::Cow, collections::VecDeque, convert::TryFrom, iter::FromIterator};
 
-pub trait Tape<Alphabet> {
+pub trait Tape<Alphabet>
+where
+    Alphabet: Clone,
+{
     fn move_left(&mut self);
     fn move_right(&mut self);
 
@@ -16,6 +19,15 @@ pub trait Tape<Alphabet> {
 
     fn get(&self) -> &Alphabet;
     fn get_mut(&mut self) -> &mut Alphabet;
+
+    /// Returns an iterator over the local area around the R/W head.
+    /// The radius is more of a suggestion of the intended size.
+    /// The first item in the tuple is the index in the iterator where the R/W head is now.
+    /// The iterator must have an element at such an index.
+    fn get_radius(
+        &self,
+        radius: usize,
+    ) -> (usize, Box<dyn Iterator<Item = Cow<'_, Alphabet>> + '_>);
 
     // rustc complains when we don't box the return type. Not sure why.
     fn get_all(self) -> Box<dyn Iterator<Item = Alphabet>>;
@@ -38,7 +50,7 @@ where
 
 impl<Alphabet> Tape<Alphabet> for Unbounded<Alphabet>
 where
-    Alphabet: Default + 'static,
+    Alphabet: Clone + Default + 'static,
 {
     fn move_left(&mut self) {
         match self.idx.checked_sub(1) {
@@ -62,6 +74,22 @@ where
         self.tape
             .get_mut(self.idx)
             .expect("Unbounded tape must have R/W head over initialised cell.")
+    }
+
+    fn get_radius(
+        &self,
+        radius: usize,
+    ) -> (usize, Box<dyn Iterator<Item = Cow<'_, Alphabet>> + '_>) {
+        let r = radius as isize;
+        (
+            radius,
+            Box::new((-r..=r).map(move |i| {
+                usize::try_from(self.idx as isize + i)
+                    .ok()
+                    .and_then(|index| self.tape.get(index).map(Cow::Borrowed))
+                    .unwrap_or(Cow::Owned(Default::default()))
+            })),
+        )
     }
 
     fn get_all(self) -> Box<dyn Iterator<Item = Alphabet>> {

@@ -14,6 +14,7 @@ pub struct TuringMachine<State, Alphabet, TapeImpl, Program> {
 
 impl<State, Alphabet, TapeImpl, Program> TuringMachine<State, Alphabet, TapeImpl, Program>
 where
+    Alphabet: Clone,
     TapeImpl: Tape<Alphabet>,
     Program: TransitionFn<State, Alphabet>,
 {
@@ -31,6 +32,20 @@ where
         loop {
             if let Some(accept) = self.step() {
                 return accept;
+            }
+        }
+    }
+
+    pub fn run_debug(&mut self) -> Result<bool, std::io::Error>
+    where
+        State: Debug,
+        Alphabet: Debug,
+    {
+        loop {
+            println!("{}", self);
+            std::io::stdin().read_line(&mut String::new())?;
+            if let Some(accept) = self.step() {
+                return Ok(accept);
             }
         }
     }
@@ -62,11 +77,25 @@ where
 impl<State, Alphabet, TapeImpl, Program> fmt::Display
     for TuringMachine<State, Alphabet, TapeImpl, Program>
 where
+    State: Debug,
+    Alphabet: Clone + Debug,
     TapeImpl: Tape<Alphabet>,
     Program: TransitionFn<State, Alphabet>,
 {
-    fn fmt(&self, _f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        todo!()
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let (head_idx, items) = self.tape.get_radius(8);
+
+        writeln!(f, "================")?;
+        for (i, item) in items.enumerate() {
+            write!(f, "{:?}", item)?;
+            if i == head_idx {
+                writeln!(f, "\t\t{:?}", self.state)?;
+            } else {
+                writeln!(f, "")?;
+            }
+        }
+        writeln!(f, "================")?;
+        Ok(())
     }
 }
 
