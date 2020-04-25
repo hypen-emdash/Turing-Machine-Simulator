@@ -8,7 +8,7 @@ Program(
 
         // Okay cases
         ("read", "0"): ("search 0 left", "x", Right),
-        ("read", "1"): ("serach 1 left", "x", Right),
+        ("read", "1"): ("search 1 left", "x", Right),
 
         // We read a zero, we're in the left half.
         ("search 0 left", "0"): ("search 0 left", "0", Right),
@@ -19,7 +19,7 @@ Program(
         // We read a one, we're in the left half.
         ("search 1 left", "0"): ("search 1 left", "0", Right),
         ("search 1 left", "1"): ("search 1 left", "1", Right),
-        ("search 1 left", "#"): ("serach 1 right", "#", Right),
+        ("search 1 left", "#"): ("search 1 right", "#", Right),
         ("search 1 left", ""): ("reject", "", Stay),
 
         // We read a zero, we're in the right half.
