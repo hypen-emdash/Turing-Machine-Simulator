@@ -83,7 +83,7 @@ where
         }
     }
 
-    pub fn with_transition<S, R>(mut self, stimulus: S, response: R) -> Self
+    pub fn add_transition<S, R>(&mut self, stimulus: S, response: R)
     where
         Stimulus<State, Alphabet>: From<S>,
         Response<State, Alphabet>: From<R>,
@@ -94,6 +94,14 @@ where
             .entry(stimulus.state)
             .or_default()
             .insert(stimulus.read, response);
+    }
+
+    pub fn with_transition<S, R>(mut self, stimulus: S, response: R) -> Self
+    where
+        Stimulus<State, Alphabet>: From<S>,
+        Response<State, Alphabet>: From<R>,
+    {
+        self.add_transition(stimulus, response);
         self
     }
 }
