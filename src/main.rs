@@ -3,17 +3,29 @@ pub mod program_ron;
 pub mod tape;
 pub mod turing_machine;
 
-use std::{io, io::Read, fs::File};
+use std::{fs::File, io, io::Read, path::PathBuf};
 
 use smol_str::SmolStr;
+use structopt::StructOpt;
 use unicode_segmentation::UnicodeSegmentation;
 
 use program::{Goto, Movement, Response, TransitionFn};
 use tape::Unbounded;
 use turing_machine::TuringMachine;
 
+#[derive(Debug, StructOpt)]
+struct Opt {
+    #[structopt(parse(from_os_str))]
+    file: PathBuf,
+}
+
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let (init, tr_func) = program_ron::read_program(File::open("examples/hello.ron")?)?;
+    let opt = Opt::from_args();
+    run(opt)
+}
+
+fn run(opt: Opt) -> Result<(), Box<dyn std::error::Error>> {
+    let (init, tr_func) = program_ron::read_program(File::open(opt.file)?)?;
 
     let mut input_buf = Vec::new();
     io::stdin().read_to_end(&mut input_buf)?;
