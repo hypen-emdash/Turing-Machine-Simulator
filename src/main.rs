@@ -3,7 +3,7 @@ pub mod program_ron;
 pub mod tape;
 pub mod turing_machine;
 
-use std::{io, io::Read};
+use std::{io, io::Read, fs::File};
 
 use smol_str::SmolStr;
 use unicode_segmentation::UnicodeSegmentation;
@@ -13,7 +13,7 @@ use tape::Unbounded;
 use turing_machine::TuringMachine;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let program = printer();
+    let (init, tr_func) = program_ron::read_program(File::open("examples/hello.ron")?)?;
 
     let mut input_buf = Vec::new();
     io::stdin().read_to_end(&mut input_buf)?;
@@ -21,7 +21,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let graphemes = UnicodeSegmentation::graphemes(input.as_str(), true);
     let tape: Unbounded<SmolStr> = graphemes.map(|g| SmolStr::from(g)).collect();
 
-    let mut machine = TuringMachine::new(SmolStr::from("Hello, world!\n"), program, tape);
+    let mut machine = TuringMachine::new(init, tr_func, tape);
 
     let accept = machine.run();
     let output = machine.get_tape();
@@ -32,6 +32,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
+#[allow(dead_code)]
 fn printer() -> impl TransitionFn<SmolStr, SmolStr> {
     |str_to_print: &SmolStr, current_symbol: &SmolStr| {
         let mut chars = str_to_print.chars();
