@@ -3,11 +3,11 @@ pub mod program_ron;
 pub mod tape;
 pub mod turing_machine;
 
-use std::{io, io::Read, fs::File, path::PathBuf};
+use std::{fs::File, io, io::Read, path::PathBuf};
 
 use smol_str::SmolStr;
-use unicode_segmentation::UnicodeSegmentation;
 use structopt::StructOpt;
+use unicode_segmentation::UnicodeSegmentation;
 
 use program::{Goto, Movement, Response, TransitionFn};
 use tape::Unbounded;
@@ -24,7 +24,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     run(opt)
 }
 
-#[allow(dead_code)]
 fn run(opt: Opt) -> Result<(), Box<dyn std::error::Error>> {
     let (init, tr_func) = program_ron::read_program(File::open(opt.file)?)?;
 
