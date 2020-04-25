@@ -1,4 +1,5 @@
 pub mod program;
+pub mod program_ron;
 pub mod tape;
 pub mod turing_machine;
 
@@ -20,8 +21,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let graphemes = UnicodeSegmentation::graphemes(input.as_str(), true);
     let tape: Unbounded<SmolStr> = graphemes.map(|g| SmolStr::from(g)).collect();
 
-    let mut machine =
-        TuringMachine::new(SmolStr::from("Hello, world!\n"), program, tape);
+    let mut machine = TuringMachine::new(SmolStr::from("Hello, world!\n"), program, tape);
 
     let accept = machine.run();
     let output = machine.get_tape();

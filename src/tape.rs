@@ -1,7 +1,7 @@
 // Possible TODO: turn this into a multi-file module.
 
 use crate::program::Movement;
-use std::{iter::FromIterator, collections::VecDeque};
+use std::{collections::VecDeque, iter::FromIterator};
 
 pub trait Tape<Alphabet> {
     fn move_left(&mut self);
