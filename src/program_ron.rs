@@ -53,3 +53,93 @@ where
     Ok((initial, prog_builder.build()))
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::program::Response;
+
+    #[test]
+    fn degenerate_program() {
+        let code = r#"Program(
+    initial: "main",
+    transitions: {}
+)"#;
+        let (initial, tr_func) =
+            read_program(code.as_bytes()).expect("Perfectly valid program with no transitions.");
+        assert_eq!(initial.as_str(), "main");
+        assert_eq!(
+            tr_func(&SmolStr::from("main"), &SmolStr::from("8")),
+            Response {
+                goto: Goto::Halt(false),
+                write: SmolStr::from("8"),
+                mv: None
+            }
+        );
+    }
+
+    #[test]
+    #[should_panic]
+    fn empty_string() {
+        read_program("".as_bytes()).expect("Empty program is not valid.");
+    }
+
+    #[test]
+    #[should_panic]
+    fn empty_program() {
+        let code = r#"Program()"#;
+        read_program(code.as_bytes()).unwrap();
+    }
+
+    #[test]
+    #[should_panic]
+    fn no_initial() {
+        let code = r#"Program(transitions: {})"#;
+        read_program(code.as_bytes()).unwrap();
+    }
+
+    #[test]
+    fn valid_program() {
+        let code = r#"Program(
+    initial: "one",
+    transitions: {
+        ("one", "0"): ("two", "", Stay),
+        ("two", "1"): ("reject", "0", Right),
+        ("three", ""): ("accept", "0", Left),
+    },
+)"#;
+        let (init, tr_func) = read_program(code.as_bytes()).expect("Perfectly valid program.");
+        assert_eq!(init.as_str(), "one");
+        assert_eq!(
+            tr_func(&SmolStr::from("one"), &SmolStr::from("0")),
+            Response {
+                goto: Goto::Run(SmolStr::from("two")),
+                write: SmolStr::from(""),
+                mv: None,
+            }
+        );
+        assert_eq!(
+            tr_func(&SmolStr::from("two"), &SmolStr::from("1")),
+            Response {
+                goto: Goto::Halt(false),
+                write: SmolStr::from("0"),
+                mv: Some(program::Movement::Right),
+            }
+        );
+        assert_eq!(
+            tr_func(&SmolStr::from("three"), &SmolStr::from("")),
+            Response {
+                goto: Goto::Halt(true),
+                write: SmolStr::from("0"),
+                mv: Some(program::Movement::Left),
+            }
+        );
+        assert_eq!(
+            tr_func(&SmolStr::from("three"), &SmolStr::from("unexpected")),
+            Response {
+                goto: Goto::Halt(false),
+                write: SmolStr::from("unexpected"),
+                mv: None,
+            }
+        );
+    }
+}
