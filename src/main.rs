@@ -17,6 +17,9 @@ use turing_machine::TuringMachine;
 struct Opt {
     #[structopt(parse(from_os_str))]
     file: PathBuf,
+
+    #[structopt(short, long)]
+    debug: bool,
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
