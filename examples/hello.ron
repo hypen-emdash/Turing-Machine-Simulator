@@ -1,0 +1,19 @@
+Program(
+    initial: "Hello, world!\n",
+    transitions: {
+        ("Hello, world!\n", ""): ("ello, world!\n", "H", Right),
+        ("ello, world!\n", ""): ("llo, world!\n", "e", Right),
+        ("llo, world!\n", ""): ("lo, world!\n", "l", Right),
+        ("lo, world!\n", ""): ("o, world!\n", "l", Right),
+        ("o, world!\n", ""): (", world!\n", "o", Right),
+        (", world!\n", ""): (" world!\n", ",", Right),
+        (" world!\n", ""): ("world!\n", " ", Right),
+        ("world!\n", ""): ("orld!\n", "w", Right),
+        ("orld!\n", ""): ("rld!\n", "o", Right),
+        ("rld!\n", ""): ("ld!\n", "r", Right),
+        ("ld!\n", ""): ("d!\n", "l", Right),
+        ("d!\n", ""): ("!\n", "d", Right),
+        ("!\n", ""): ("\n", "!", Right),
+        ("\n", ""): ("accept", "\n", Stay),
+    },
+)
