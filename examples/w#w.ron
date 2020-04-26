@@ -1,0 +1,52 @@
+// TODO: check if it accepts words like 10#xxx10
+Program(
+    initial: "read",
+    transitions: {
+        // Degenerate case.
+        ("read", ""): ("reject", "", Stay),
+        ("read", "#"): ("end", "#", Right),
+
+        // Okay cases
+        ("read", "0"): ("search 0 left", "x", Right),
+        ("read", "1"): ("search 1 left", "x", Right),
+
+        // We read a zero, we're in the left half.
+        ("search 0 left", "0"): ("search 0 left", "0", Right),
+        ("search 0 left", "1"): ("search 0 left", "1", Right),
+        ("search 0 left", "#"): ("search 0 right", "#", Right),
+        ("search 0 left", ""): ("reject", "", Stay),
+
+        // We read a one, we're in the left half.
+        ("search 1 left", "0"): ("search 1 left", "0", Right),
+        ("search 1 left", "1"): ("search 1 left", "1", Right),
+        ("search 1 left", "#"): ("search 1 right", "#", Right),
+        ("search 1 left", ""): ("reject", "", Stay),
+
+        // We read a zero, we're in the right half.
+        ("search 0 right", "0"): ("back up right", "x", Left),
+        ("search 0 right", "x"): ("search 0 right", "x", Right),
+        ("search 0 right", "1"): ("reject", "1", Stay),
+        ("search 0 right", "#"): ("reject", "#", Stay),
+        ("search 0 right", ""): ("reject", "", Stay),
+
+        // We read a one, we're in the right half.
+        ("search 1 right", "1"): ("back up right", "x", Left),
+        ("search 1 right", "x"): ("search 1 right", "x", Right),
+        ("search 1 right", "0"): ("reject", "0", Stay),
+        ("search 1 right", "#"): ("reject", "#", Stay),
+        ("search 1 right", ""): ("reject", "", Stay),
+
+        // Back up until we hit the leftmost letter.
+        ("back up right", "x"): ("back up right", "x", Left),
+        ("back up right", "#"): ("back up left", "#", Left),
+        ("back up left", "0"): ("back up left", "0", Left),
+        ("back up left", "1"): ("back up left", "1", Left),
+        ("back up left", "x"): ("read", "x", Right),
+
+        // Check at the end.
+        ("end", "x"): ("end", "x", Right),
+        ("end", ""): ("accept", "", Stay),
+        ("end", "0"): ("reject", "0", Stay),
+        ("end", "1"): ("reject", "1", Stay),
+    }
+)
