@@ -1,11 +1,10 @@
 #[warn(rust_2018_idioms)]
-
 pub mod program;
 pub mod program_ron;
 pub mod tape;
 pub mod turing_machine;
 
-use std::{fs::File, io, io::Read, path::PathBuf};
+use std::{fmt, fs::File, io, io::Read, path::PathBuf};
 
 use smol_str::SmolStr;
 use structopt::StructOpt;
@@ -24,12 +23,49 @@ struct Opt {
     debug: bool,
 }
 
-fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let opt = Opt::from_args();
-    run(opt)
+#[derive(Debug)]
+enum Error {
+    Io(std::io::Error),
+    Ron(ron::de::Error),
+    StrRead(std::string::FromUtf8Error),
 }
 
-fn run(opt: Opt) -> Result<(), Box<dyn std::error::Error>> {
+impl fmt::Display for Error {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Error::Io(err) => write!(f, "{}", err),
+            Error::Ron(err) => write!(f, "{}", err),
+            Error::StrRead(err) => write!(f, "{}", err.utf8_error()),
+        }
+    }
+}
+
+impl From<std::io::Error> for Error {
+    fn from(err: std::io::Error) -> Self {
+        Error::Io(err)
+    }
+}
+
+impl From<ron::de::Error> for Error {
+    fn from(err: ron::de::Error) -> Self {
+        Error::Ron(err)
+    }
+}
+
+impl From<std::string::FromUtf8Error> for Error {
+    fn from(err: std::string::FromUtf8Error) -> Self {
+        Error::StrRead(err)
+    }
+}
+
+impl std::error::Error for Error {}
+
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let opt = Opt::from_args();
+    Ok(run(opt)?)
+}
+
+fn run(opt: Opt) -> Result<(), Error> {
     let (init, tr_func) = program_ron::read_program(File::open(opt.file)?)?;
 
     let mut input_buf = Vec::new();
