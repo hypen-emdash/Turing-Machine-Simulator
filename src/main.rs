@@ -4,7 +4,13 @@ pub mod program_ron;
 pub mod tape;
 pub mod turing_machine;
 
-use std::{fmt, fs::File, io, io::Read, path::PathBuf};
+use std::{
+    fmt,
+    fs::File,
+    io,
+    io::{BufReader, BufRead, Write},
+    path::PathBuf,
+};
 
 use smol_str::SmolStr;
 use structopt::StructOpt;
@@ -62,14 +68,18 @@ impl std::error::Error for Error {}
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let opt = Opt::from_args();
-    Ok(run(opt)?)
+    Ok(run(opt, BufReader::new(io::stdin()), io::stdout())?)
 }
 
-fn run(opt: Opt) -> Result<(), Error> {
+fn run<R, W>(opt: Opt, mut rdr: R, mut wtr: W) -> Result<(), Error>
+where
+    R: BufRead,
+    W: Write,
+{
     let (init, tr_func) = program_ron::read_program(File::open(opt.file)?)?;
 
     let mut input_buf = Vec::new();
-    io::stdin().read_to_end(&mut input_buf)?;
+    rdr.read_to_end(&mut input_buf)?;
     let input = String::from_utf8(input_buf)?;
     let graphemes = UnicodeSegmentation::graphemes(input.as_str(), true);
     let tape: Unbounded<SmolStr> = graphemes.map(|g| SmolStr::from(g)).collect();
@@ -77,15 +87,15 @@ fn run(opt: Opt) -> Result<(), Error> {
     let mut machine = TuringMachine::new(init, tr_func, tape);
 
     let accept = if opt.debug {
-        machine.run_debug()?
+        machine.run_debug(&mut rdr, &mut wtr)?
     } else {
         machine.run()
     };
     let output = machine.get_tape();
     for item in output {
-        print!("{}", item);
+        write!(wtr, "{}", item)?;
     }
-    println!("{}", accept);
+    writeln!(wtr, "{}", accept)?;
     Ok(())
 }
 

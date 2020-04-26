@@ -2,7 +2,12 @@ use crate::{
     program::{Goto, Response, TransitionFn},
     tape::Tape,
 };
-use std::{fmt, fmt::Debug, marker::PhantomData};
+use std::{
+    fmt,
+    fmt::Debug,
+    io::{BufRead, Write},
+    marker::PhantomData,
+};
 
 #[derive(Debug)]
 pub struct TuringMachine<State, Alphabet, TapeImpl, Program> {
@@ -36,14 +41,16 @@ where
         }
     }
 
-    pub fn run_debug(&mut self) -> Result<bool, std::io::Error>
+    pub fn run_debug<R, W>(&mut self, mut rdr: R, mut wtr: W) -> Result<bool, std::io::Error>
     where
+        R: BufRead,
+        W: Write,
         State: Debug,
         Alphabet: Debug,
     {
         loop {
-            println!("{}", self);
-            std::io::stdin().read_line(&mut String::new())?;
+            writeln!(wtr, "{}", self)?;
+            rdr.read_line(&mut String::new())?;
             if let Some(accept) = self.step() {
                 return Ok(accept);
             }
